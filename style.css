@@ -20,15 +20,14 @@ canvas {
     pointer-events: none; /* These elements should not be interactive */
 }
 .joystick {
-    position: absolute;
-    bottom: 20px;
+    position: absolute; /* Position is set by JS */
     width: 120px;
     height: 120px;
     background-color: rgba(128, 128, 128, 0.3);
     border-radius: 50%;
-    display: none; /* Hidden by default, shown for touch devices */
-    pointer-events: auto; /* But the joysticks should be */
+    pointer-events: none; /* The joystick itself doesn't need events */
 }
+
 .joystick-inner {
     position: absolute;
     top: 30px;
@@ -37,12 +36,6 @@ canvas {
     height: 60px;
     background-color: rgba(128, 128, 128, 0.6);
     border-radius: 50%;
-}
-#joystick-left {
-    left: 20px;
-}
-#joystick-right {
-    right: 20px;
 }
 #instructions {
     position: absolute;
