@@ -10,7 +10,7 @@ class Game {
         this.player = {
             mesh: null, // Mesh will be loaded
             velocity: new THREE.Vector3(),
-            speed: 5.0,
+            speed: 5.0* 6,
             collisionRadius: 0.4
         };
 
