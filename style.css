@@ -1,0 +1,64 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #000;
+    font-family: monospace;
+}
+canvas {
+    display: block;
+}
+#ui {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    color: white;
+    pointer-events: none; /* Pass through clicks to canvas */
+}
+#instructions, #debug {
+    pointer-events: none; /* These elements should not be interactive */
+}
+.joystick {
+    position: absolute;
+    bottom: 20px;
+    width: 120px;
+    height: 120px;
+    background-color: rgba(128, 128, 128, 0.3);
+    border-radius: 50%;
+    display: none; /* Hidden by default, shown for touch devices */
+    pointer-events: auto; /* But the joysticks should be */
+}
+.joystick-inner {
+    position: absolute;
+    top: 30px;
+    left: 30px;
+    width: 60px;
+    height: 60px;
+    background-color: rgba(128, 128, 128, 0.6);
+    border-radius: 50%;
+}
+#joystick-left {
+    left: 20px;
+}
+#joystick-right {
+    right: 20px;
+}
+#instructions {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+}
+#debug {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 5px;
+    border-radius: 3px;
+}

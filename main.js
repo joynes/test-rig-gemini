@@ -1,0 +1,362 @@
+import * as THREE from 'three';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+
+class Game {
+    constructor() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        
+        this.player = {
+            mesh: null, // Mesh will be loaded
+            velocity: new THREE.Vector3(),
+            speed: 5.0,
+            collisionRadius: 0.4
+        };
+
+        this.animation = {
+            mixer: null,
+            walkAction: null
+        };
+
+        this.cameraControls = {
+            phi: 0,
+            theta: -Math.PI / 4,
+            distance: 5,
+            target: new THREE.Vector3()
+        };
+
+        this.input = {
+            move: new THREE.Vector2(),
+            look: new THREE.Vector2(),
+            keys: new Set()
+        };
+
+        this.colliders = [];
+        this.clock = new THREE.Clock();
+        this.isTouchDevice = 'ontouchstart' in window;
+
+        this.init();
+    }
+
+    init() {
+        // Renderer setup
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(this.renderer.domElement);
+
+        // Scene background
+        this.scene.background = new THREE.Color(0x87CEEB);
+        this.scene.fog = new THREE.Fog(0x87CEEB, 100, 300);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+        this.scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(10, 20, 5);
+        this.scene.add(directionalLight);
+
+        // Ground
+        const groundGeo = new THREE.PlaneGeometry(500, 500);
+        const groundMat = new THREE.MeshLambertMaterial({ color: 0x559020 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        this.scene.add(ground);
+
+        // Player
+        this.loadPlayerModel();
+
+        // Scenery
+        this.generateScenery();
+
+        // Event Listeners
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        this.setupControls();
+
+        // Start loop
+        this.animate();
+    }
+
+    loadPlayerModel() {
+        const loader = new FBXLoader();
+        const modelUrl = 'Walking.fbx'; // Load from the same folder
+
+        loader.load(modelUrl, (fbx) => {
+            this.player.mesh = fbx;
+            this.scene.add(this.player.mesh);
+
+            const box = new THREE.Box3().setFromObject(this.player.mesh);
+            const size = box.getSize(new THREE.Vector3());
+            const requiredHeight = 1.8;
+            const scale = requiredHeight / size.y;
+            this.player.mesh.scale.set(scale, scale, scale);
+            this.player.mesh.position.y = 0;
+
+            this.animation.mixer = new THREE.AnimationMixer(this.player.mesh);
+            if (fbx.animations.length > 0) {
+                const walkClip = fbx.animations[0];
+                this.animation.walkAction = this.animation.mixer.clipAction(walkClip);
+                this.animation.walkAction.play();
+            } else {
+                console.warn("Model loaded, but no animations found!");
+            }
+
+        }, undefined, (error) => {
+            console.error('An error happened while loading the model:', error);
+            const instructions = document.getElementById('instructions');
+            instructions.innerHTML = "Kunde inte ladda 3D-modellen. Kontrollera att 'Walking.fbx' finns i samma mapp.";
+        });
+    }
+
+    generateScenery() {
+        const treeCount = 100;
+        const rockCount = 50;
+        const mapSize = 480;
+        const safeZone = 10;
+
+        for (let i = 0; i < treeCount; i++) {
+            const pos = this.getRandomPosition(mapSize, safeZone);
+            const trunkHeight = Math.random() * 2 + 2;
+            const trunkRadius = 0.2 + Math.random() * 0.2;
+            const crownRadius = 1 + Math.random() * 0.5;
+            const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight);
+            const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.set(pos.x, trunkHeight / 2, pos.z);
+            const crownGeo = new THREE.SphereGeometry(crownRadius);
+            const crownMat = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+            const crown = new THREE.Mesh(crownGeo, crownMat);
+            crown.position.set(pos.x, trunkHeight + crownRadius * 0.8, pos.z);
+            this.scene.add(trunk, crown);
+            this.colliders.push({ position: pos, radius: crownRadius });
+        }
+
+        for (let i = 0; i < rockCount; i++) {
+            const pos = this.getRandomPosition(mapSize, safeZone);
+            const rockSize = Math.random() * 0.5 + 0.3;
+            const rockGeo = new THREE.SphereGeometry(rockSize);
+            const rockMat = new THREE.MeshLambertMaterial({ color: 0x808080 });
+            const rock = new THREE.Mesh(rockGeo, rockMat);
+            rock.position.set(pos.x, rockSize / 2, pos.z);
+            this.scene.add(rock);
+            this.colliders.push({ position: pos, radius: rockSize });
+        }
+    }
+
+    getRandomPosition(mapSize, safeZone) {
+        let x, z;
+        do {
+            x = Math.random() * mapSize - mapSize / 2;
+            z = Math.random() * mapSize - mapSize / 2;
+        } while (Math.sqrt(x*x + z*z) < safeZone);
+        return new THREE.Vector3(x, 0, z);
+    }
+
+    setupControls() {
+        if (this.isTouchDevice) {
+            this.setupJoysticks();
+            document.getElementById('desktop-instructions').style.display = 'none';
+        } else {
+            this.setupPointerLock();
+            document.addEventListener('keydown', (e) => this.input.keys.add(e.code));
+            document.addEventListener('keyup', (e) => this.input.keys.delete(e.code));
+        }
+    }
+
+    setupPointerLock() {
+        const canvas = this.renderer.domElement;
+        canvas.addEventListener('click', () => {
+            canvas.requestPointerLock();
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === canvas) {
+                document.addEventListener('mousemove', this.onMouseMove.bind(this));
+                document.getElementById('instructions').style.display = 'none';
+            } else {
+                document.removeEventListener('mousemove', this.onMouseMove.bind(this));
+                document.getElementById('instructions').style.display = 'block';
+            }
+        });
+    }
+
+    onMouseMove(event) {
+        this.input.look.x += event.movementX * 0.002;
+        this.input.look.y += event.movementY * 0.002;
+    }
+
+    setupJoysticks() {
+        const leftJoy = document.getElementById('joystick-left');
+        const rightJoy = document.getElementById('joystick-right');
+        leftJoy.style.display = 'block';
+        rightJoy.style.display = 'block';
+
+        const createJoystick = (el, onMove) => {
+            const inner = el.querySelector('.joystick-inner');
+            const maxDiff = el.clientWidth / 2;
+            let touchId = null;
+            let startPos = null;
+
+            el.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (touchId === null) {
+                    const touch = e.changedTouches[0];
+                    touchId = touch.identifier;
+                    startPos = { x: touch.clientX, y: touch.clientY };
+                }
+            }, { passive: false });
+
+            document.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (touchId !== null) {
+                    let touch;
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === touchId) {
+                            touch = e.changedTouches[i];
+                            break;
+                        }
+                    }
+                    if (!touch) return;
+                    const dx = touch.clientX - startPos.x;
+                    const dy = touch.clientY - startPos.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    const angle = Math.atan2(dy, dx);
+                    const clampedDist = Math.min(dist, maxDiff);
+                    const x = Math.cos(angle) * clampedDist;
+                    const y = Math.sin(angle) * clampedDist;
+                    inner.style.transform = `translate(${x}px, ${y}px)`;
+                    onMove(x / maxDiff, y / maxDiff);
+                }
+            }, { passive: false });
+
+            document.addEventListener('touchend', (e) => {
+                if (touchId !== null) {
+                     for (let i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === touchId) {
+                            touchId = null;
+                            inner.style.transform = 'translate(0, 0)';
+                            onMove(0, 0);
+                            break;
+                        }
+                    }
+                }
+            });
+        };
+
+        createJoystick(leftJoy, (x, y) => {
+            this.input.move.set(x, -y);
+        });
+
+        createJoystick(rightJoy, (x, y) => {
+            this.input.look.x -= x * 0.05;
+            this.input.look.y += y * 0.05;
+        });
+    }
+
+    update(deltaTime) {
+        this.updateInput(deltaTime);
+        if (this.player.mesh) {
+            this.updatePlayer(deltaTime);
+            this.updateCamera(deltaTime);
+        }
+        if (this.animation.mixer) {
+            this.animation.mixer.update(deltaTime);
+        }
+    }
+
+    updateInput(deltaTime) {
+        if (!this.isTouchDevice) {
+            this.input.move.set(0, 0);
+            if (this.input.keys.has('KeyW')) this.input.move.y = 1;
+            if (this.input.keys.has('KeyS')) this.input.move.y = -1;
+            if (this.input.keys.has('KeyA')) this.input.move.x = -1;
+            if (this.input.keys.has('KeyD')) this.input.move.x = 1;
+        }
+
+        this.cameraControls.phi = this.input.look.y;
+        this.cameraControls.theta = this.input.look.x;
+        this.cameraControls.phi = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this.cameraControls.phi));
+    }
+
+    updatePlayer(deltaTime) {
+        const moveDirection = new THREE.Vector3(this.input.move.x, 0, this.input.move.y).normalize();
+        
+        const cameraDirection = new THREE.Vector3();
+        this.camera.getWorldDirection(cameraDirection);
+        const angle = Math.atan2(cameraDirection.x, cameraDirection.z);
+        moveDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+
+        const targetVelocity = moveDirection.multiplyScalar(this.player.speed);
+        this.player.velocity.lerp(targetVelocity, 10 * deltaTime);
+
+        const moveDelta = this.player.velocity.clone().multiplyScalar(deltaTime);
+        const newPosition = this.player.mesh.position.clone().add(moveDelta);
+
+        this.checkCollisions(newPosition);
+
+        this.player.mesh.position.copy(newPosition);
+        
+        if (this.player.velocity.lengthSq() > 0.01) {
+            const targetAngle = Math.atan2(this.player.velocity.x, this.player.velocity.z);
+            this.player.mesh.rotation.y = THREE.MathUtils.lerp(this.player.mesh.rotation.y, targetAngle, 15 * deltaTime);
+            if (this.animation.walkAction && !this.animation.walkAction.isRunning()) {
+                this.animation.walkAction.play();
+            }
+        } else {
+            if (this.animation.walkAction && this.animation.walkAction.isRunning()) {
+                this.animation.walkAction.stop();
+            }
+        }
+    }
+
+    checkCollisions(newPosition) {
+        if (!this.player.mesh) return;
+        const playerRadius = this.player.collisionRadius;
+        for (const collider of this.colliders) {
+            const dx = newPosition.x - collider.position.x;
+            const dz = newPosition.z - collider.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            const minDistance = playerRadius + collider.radius;
+
+            if (distance < minDistance) {
+                const overlap = minDistance - distance;
+                const pushVector = new THREE.Vector3(dx, 0, dz).normalize().multiplyScalar(overlap);
+                newPosition.add(pushVector);
+            }
+        }
+    }
+
+    updateCamera(deltaTime) {
+        if (!this.player.mesh) return;
+        this.cameraControls.target.lerp(this.player.mesh.position, 15 * deltaTime);
+
+        const offset = new THREE.Vector3();
+        offset.x = this.cameraControls.distance * Math.sin(this.cameraControls.theta) * Math.cos(this.cameraControls.phi);
+        offset.y = this.cameraControls.distance * Math.sin(this.cameraControls.phi);
+        offset.z = this.cameraControls.distance * Math.cos(this.cameraControls.theta) * Math.cos(this.cameraControls.phi);
+
+        const cameraPosition = this.cameraControls.target.clone().add(offset);
+        
+        this.camera.position.lerp(cameraPosition, 15 * deltaTime);
+        this.camera.lookAt(this.cameraControls.target.clone().add(new THREE.Vector3(0, 1, 0)));
+    }
+
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    animate() {
+        requestAnimationFrame(this.animate.bind(this));
+        const deltaTime = this.clock.getDelta();
+        
+        this.update(deltaTime);
+        this.renderer.render(this.scene, this.camera);
+
+        const fps = 1 / deltaTime;
+        document.getElementById('debug').textContent = `FPS: ${Math.round(fps)}`;
+    }
+}
+
+new Game();
