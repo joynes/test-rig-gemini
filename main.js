@@ -393,6 +393,9 @@ class Game {
         offset.z = this.cameraControls.distance * Math.cos(this.cameraControls.theta) * Math.cos(this.cameraControls.phi);
 
         const cameraPosition = this.cameraControls.target.clone().add(offset);
+
+        // Prevent camera from going through the ground
+        cameraPosition.y = Math.max(cameraPosition.y, 0.2);
         
         this.camera.position.lerp(cameraPosition, 15 * deltaTime);
         this.camera.lookAt(this.cameraControls.target.clone().add(new THREE.Vector3(0, 1, 0)));
